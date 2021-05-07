@@ -1,0 +1,14 @@
+[Unit]
+Description=udp2raw
+After=network-online.target
+Wants=network-online.target systemd-networkd-wait-online.service
+[Service]
+User=root
+Group=root
+Type=simple
+Restart=on-failure
+RestartSec=5s
+ExecStart=/etc/udp2raw/udp2raw_start.sh
+ExecStop=/etc/udp2raw/udp2raw_stop.sh
+[Install]
+WantedBy=multi-user.target

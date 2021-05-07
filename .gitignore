@@ -1,0 +1,6 @@
+*.log
+.idea
+secrets
+client/udp2raw
+client/shadowsocks
+client/kcptun

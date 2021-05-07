@@ -1,0 +1,154 @@
+#!/bin/bash
+# ---------------------------------------------------------------------------
+# provision - provision udp2raw, kcptun and shadowsocks
+
+# Copyright 2021,  <damon@MacBook-Air.local>
+# All rights reserved.
+
+# Usage: provision [-h|--help] [-s|--start pwd up kp sp] [-d|--down]
+
+# Revision history:
+# 2021-05-07 Created by new_script ver. 3.3
+# ---------------------------------------------------------------------------
+
+PROGNAME=${0##*/}
+VERSION="0.1"
+
+clean_up() { # Perform pre-exit housekeeping
+  return
+}
+
+error_exit() {
+  echo -e "${PROGNAME}: ${1:-"Unknown Error"}" >&2
+  clean_up
+  exit 1
+}
+
+graceful_exit() {
+  clean_up
+  exit
+}
+
+signal_exit() { # Handle trapped signals
+  case $1 in
+    INT)
+      error_exit "Program interrupted by user" ;;
+    TERM)
+      echo -e "\n$PROGNAME: Program terminated" >&2
+      graceful_exit ;;
+    *)
+      error_exit "$PROGNAME: Terminating on unknown signal" ;;
+  esac
+}
+
+usage() {
+  echo -e "Usage: $PROGNAME [-h|--help] [-s|--start pwd up kp sp] [-d|--down]"
+}
+
+help_message() {
+  cat <<- _EOF_
+  $PROGNAME ver. $VERSION
+  provision udp2raw, kcptun and shadowsocks
+
+  $(usage)
+
+  Options:
+  -h, --help  Display this help message and exit.
+  -s, --start pwd up kp sp  Start the tunnel
+    Where 'pwd' is the password, 'up' is the udp2raw's port (optional, default to 12315), 'kp' is the kcptun's port (optional, default to 29900), 'sp' is the shadowsocks's port (optional, default to 8083).
+  -d, --down  Stop the tunnel
+
+  NOTE: You must be the superuser to run this script.
+
+_EOF_
+  return
+}
+
+# Trap signals
+trap "signal_exit TERM" TERM HUP
+trap "signal_exit INT"  INT
+
+# Check for root UID
+check_root() {
+  if [[ $(id -u) != 0 ]]; then
+    error_exit "You must be the superuser to run this script."
+  fi
+}
+
+start() {
+  if [[ -z "${pwd}" ]]; then
+    error_exit "Password is required."
+  fi
+  if [[ -z "${up}" ]]; then
+    up=12315
+  fi
+  if [[ -z "${kp}" ]]; then
+    kp=29900
+  fi
+  if [[ -z "${sp}" ]]; then
+    sp=8083
+  fi
+
+  mkdir -p /etc/{udp2raw,kcptun,shadowsocks}
+
+  wget -c "https://github.com/xtaci/kcptun/releases/download/v20201010/kcptun-linux-amd64-20201010.tar.gz" -O - | tar -zxv -C /etc/kcptun/
+  wget -c "https://github.com/wangyu-/udp2raw-tunnel/releases/download/20200818.0/udp2raw_binaries.tar.gz" -O - | tar -zxv -C /etc/udp2raw/
+  apt update
+  apt install shadowsocks-libev
+
+  cp -f udp2raw.conf /etc/udp2raw/udp2raw.conf
+  cp -f udp2raw_start.sh /etc/udp2raw/udp2raw_start.sh
+  cp -f udp2raw_stop.sh /etc/udp2raw/udp2raw_stop.sh
+  cp -f udp2raw.service /etc/systemd/system/udp2raw.service
+  cp -f kcptun.json /etc/kcptun/kcptun.json
+  cp -f kcptun_start.sh /etc/kcptun/kcptun_start.sh
+  cp -f kcptun_stop.sh /etc/kcptun/kcptun_stop.sh
+  cp -f kcptun.service /etc/systemd/system/kcptun.service
+  cp -f shadowsocks.json /etc/shadowsocks-libev/config.json
+
+  sed -i "s/PASSWORD_TO_REPLACE/${pwd}/g" /etc/udp2raw/udp2raw.conf
+  sed -i "s/UP_TO_REPLACE/${up}/g" /etc/udp2raw/udp2raw.conf
+  sed -i "s/KP_TO_REPLACE/${kp}/g" /etc/udp2raw/udp2raw.conf
+  sed -i "s/PASSWORD_TO_REPLACE/${pwd}/g" /etc/kcptun/kcptun.json
+  sed -i "s/KP_TO_REPLACE/${kp}/g" /etc/kcptun/kcptun.json
+  sed -i "s/SP_TO_REPLACE/${sp}/g" /etc/kcptun/kcptun.json
+  sed -i "s/PASSWORD_TO_REPLACE/${pwd}/g" /etc/shadowsocks-libev/config.json
+  sed -i "s/SP_TO_REPLACE/${sp}/g" /etc/shadowsocks-libev/config.json
+
+  systemctl daemon-reload
+  systemctl restart shadowsocks-libev.service
+  systemctl enable shadowsocks-libev.service
+  systemctl start kcptun.service
+  systemctl enable kcptun.service
+  systemctl start udp2raw.service
+  systemctl enable udp2raw.service
+}
+
+stop() {
+  systemctl stop udp2raw.service
+  systemctl stop kcptun.service
+  systemctl stop shadowsocks-libev.service
+}
+
+# Parse command-line
+while [[ -n $1 ]]; do
+  case $1 in
+    -h | --help)
+      help_message; graceful_exit ;;
+    -s | --start)
+      check_root; echo "start"; shift; pwd="$1"; shift; up="$1"; shift; kp="$1"; shift; sp="$1"; start;;
+    -d | --down)
+      check_root; echo "down"; stop;;
+    -* | --*)
+      usage
+      error_exit "Unknown option $1" ;;
+    *)
+      echo "Argument $1 to process..." ;;
+  esac
+  shift
+done
+
+# Main logic
+
+graceful_exit
+

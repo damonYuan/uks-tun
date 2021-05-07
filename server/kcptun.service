@@ -1,0 +1,14 @@
+[Unit]
+Description=kcptun
+After=network-online.target
+Wants=network-online.target systemd-networkd-wait-online.service
+[Service]
+User=root
+Group=root
+Type=simple
+Restart=on-failure
+RestartSec=5s
+ExecStart=/etc/kcptun/kcptun_start.sh
+ExecStop=/etc/kcptun/kcptun_stop.sh
+[Install]
+WantedBy=multi-user.target

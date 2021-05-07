@@ -1,0 +1,159 @@
+#!/bin/zsh
+# ---------------------------------------------------------------------------
+# client - client script for uks-tun
+
+# Copyright 2021,  <damon@MacBook-Air.local>
+# All rights reserved.
+
+# Usage: client [-h|--help] [-i|--install pwd ip up] [-s|--start] [-d|--down]
+
+# Revision history:
+# 2021-05-08 Created by new_script ver. 3.3
+# ---------------------------------------------------------------------------
+
+PROGNAME=${0##*/}
+VERSION="0.1"
+
+clean_up() { # Perform pre-exit housekeeping
+  return
+}
+
+error_exit() {
+  echo -e "${PROGNAME}: ${1:-"Unknown Error"}" >&2
+  clean_up
+  exit 1
+}
+
+graceful_exit() {
+  clean_up
+  exit
+}
+
+signal_exit() { # Handle trapped signals
+  case $1 in
+    INT)
+      error_exit "Program interrupted by user" ;;
+    TERM)
+      echo -e "\n$PROGNAME: Program terminated" >&2
+      graceful_exit ;;
+    *)
+      error_exit "$PROGNAME: Terminating on unknown signal" ;;
+  esac
+}
+
+usage() {
+  echo -e "Usage: $PROGNAME [-h|--help] [-i|--install pwd ip up] [-s|--start] [-d|--down]"
+}
+
+help_message() {
+  cat <<- _EOF_
+  $PROGNAME ver. $VERSION
+  client script for uks-tun
+
+  $(usage)
+
+  Options:
+  -h, --help  Display this help message and exit.
+  -i, --install  Install the clients
+    Where 'pwd' is the password, 'ip' is the remote server's IP, 'up' is the remote udp2raw's port.
+  -s, --start  Start the clients
+  -d, --down  Stop the clients
+
+  NOTE: You must be the superuser to run this script.
+
+_EOF_
+  return
+}
+
+# Trap signals
+trap "signal_exit TERM" TERM HUP
+trap "signal_exit INT"  INT
+
+# Check for root UID
+check_root() {
+  if [[ $(id -u) != 0 ]]; then
+    error_exit "You must be the superuser to run this script."
+  fi
+}
+
+mac_install() {
+  if [[ -z "${pwd}" ]]; then
+    error_exit "Password is required."
+  fi
+  if [[ -z "${ip}" ]]; then
+    error_exit "IP is required."
+  fi
+  if [[ -z "${up}" ]]; then
+    error_exit "udp2raw's port is required."
+  fi
+
+  mkdir -p ./{shadowsocks,kcptun,udp2raw}
+  brew install polipo
+  brew install shadowsocks-libev
+  wget -c "https://github.com/xtaci/kcptun/releases/download/v20210103/kcptun-darwin-amd64-20210103.tar.gz" -O - | tar -zxv -C ./kcptun/
+  wget -c "https://github.com/wangyu-/udp2raw-multiplatform/releases/download/20210111.0/udp2raw_mp_binaries.tar.gz" -O - | tar -zxv -C ./udp2raw/
+
+  cp -f ./udp2raw.conf ./udp2raw/udp2raw.conf
+  cp -f ./kcptun.json ./kcptun/kcptun.json
+  cp -f ./shadowsocks.json ./shadowsocks/shadowsocks.json
+
+  sed -i '' "s/PASSWORD_TO_REPLACE/${pwd}/g" ./udp2raw/udp2raw.conf
+  sed -i '' "s/IP_TO_REPLACE/${ip}/g" ./udp2raw/udp2raw.conf
+  sed -i '' "s/UP_TO_REPLACE/${up}/g" ./udp2raw/udp2raw.conf
+  sed -i '' "s/PASSWORD_TO_REPLACE/${pwd}/g" ./kcptun/kcptun.json
+  sed -i '' "s/PASSWORD_TO_REPLACE/${pwd}/g" ./shadowsocks/shadowsocks.json
+  sed -i '' "s/SP_TO_REPLACE/${sp}/g" ./shadowsocks/shadowsocks.json
+}
+
+mac_start() {
+  nohup ./udp2raw/udp2raw_mp_mac --conf-file ./udp2raw/udp2raw.conf 2>&1 > nohup-udp2raw.log &
+  nohup ./kcptun/client_darwin_amd64 -c ./kcptun/kcptun.json 2>&1 > nohup-kcptun.log &
+  nohup ss-local -c ./shadowsocks/shadowsocks.json 2>&1 > nohup-ss.log &
+  nohup polipo socksParentProxy=localhost:8083 2>&1 > nohup-po.log &
+}
+
+mac_stop() {
+  UDP_PID=$(pgrep -f 'udp2raw/udp2raw_mp_mac')
+  [[ ! -z "$UDP_PID" ]] && kill -15 "$UDP_PID"
+  TCP_PID=$(pgrep -f 'kcptun/client_darwin_amd64')
+  [[ ! -z "$TCP_PID" ]] && kill -15 "$TCP_PID"
+  SS_PID=$(pgrep -f 'ss-local')
+  [[ ! -z "$SS_PID" ]] && kill -15 "$SS_PID"
+  SS_PO=$(pgrep -f 'polipo')
+  [[ ! -z "$SS_PO" ]] && kill -15 "$SS_PO"
+}
+
+set_git_proxy() {
+  git config --global http.proxy 127.0.0.1:8123
+  git config --global https.proxy 127.0.0.1:8123
+}
+
+unset_git_proxy() {
+  git config --global --unset-all http.proxy
+  git config --global --unset-all https.proxy
+}
+
+# Parse command-line
+while [[ -n $1 ]]; do
+  case $1 in
+    -h | --help)
+      help_message; graceful_exit ;;
+    -i | --install)
+      echo "install the clients"; shift; pwd="$1"; shift; ip="$1"; shift; up="$1"; mac_install ;;
+    -s | --start)
+      check_root; echo "start the clients"; mac_start ;;
+    -d | --down)
+      check_root; echo "stop the clients"; mac_stop ;;
+    -* | --*)
+      usage
+      error_exit "Unknown option $1" ;;
+    *)
+      echo "Argument $1 to process..." ;;
+  esac
+  shift
+done
+
+# Main logic
+
+graceful_exit
+

@@ -1,0 +1,10 @@
+{
+  "server":"0.0.0.0",
+  "server_port":13334,
+  "local_address": "127.0.0.1",
+  "local_port": 8083,
+  "password":"PASSWORD_TO_REPLACE",
+  "timeout":300,
+  "method":"aes-256-cfb",
+  "fast_open": true
+}
