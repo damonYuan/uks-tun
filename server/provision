@@ -94,7 +94,7 @@ start() {
   wget -c "https://github.com/xtaci/kcptun/releases/download/v20201010/kcptun-linux-amd64-20201010.tar.gz" -O - | tar -zxv -C /etc/kcptun/
   wget -c "https://github.com/wangyu-/udp2raw-tunnel/releases/download/20200818.0/udp2raw_binaries.tar.gz" -O - | tar -zxv -C /etc/udp2raw/
   apt update
-  apt install shadowsocks-libev
+  apt install -y shadowsocks-libev
 
   cp -f udp2raw.conf /etc/udp2raw/udp2raw.conf
   cp -f udp2raw_start.sh /etc/udp2raw/udp2raw_start.sh
